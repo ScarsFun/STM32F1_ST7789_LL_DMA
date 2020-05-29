@@ -1,4 +1,4 @@
-# WORK IN PROGRESS NOT FUNCTIONAL!
+# Dirty Code : works with 240x240 display
 
 ## STM32F10x_DMA_LL_ST7789
 Fast ST7789 DMA Library for STM32F10x LL (Low Layer drivers)
