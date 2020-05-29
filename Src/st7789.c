@@ -28,7 +28,7 @@
         b = t;             \
     }
 #define DELAY 0x80
-
+uint8_t Y_SHIFT = 0, X_SHIFT = 0;
 static uint8_t _value_rotation = 0;
 
 static int16_t _height = ST7789_TFTHEIGHT, _width = ST7789_TFTWIDTH;
@@ -36,39 +36,40 @@ static uint8_t _xstart = ST7789_240x240_XSTART, _ystart = ST7789_240x240_YSTART;
 volatile uint32_t flag_DMA_CH3_bsy = 0;
 
 static const uint8_t
-  cmd_240x240[] = {                         // Initialization commands for 7789 screens
-    9,                                     // 9 commands in list:
-    ST7789_SWRESET,   DELAY,         // 1: Software reset, no args, w/delay
-      150,                                  // 150 ms delay
-    ST7789_SLPOUT ,   DELAY,         // 2: Out of sleep mode, no args, w/delay
-      255,                                  // 255 = 500 ms delay
-    ST7789_COLMOD , 1+DELAY,         // 3: Set color mode, 1 arg + delay:
-      0x55,                                 // 16-bit color
-      10,                                   // 10 ms delay
-    ST7789_MADCTL , 1,                      // 4: Memory access ctrl (directions), 1 arg:
-      0x00,                                 // Row addr/col addr, bottom to top refresh
-    ST7789_CASET  , 4,                      // 5: Column addr set, 4 args, no delay:
-      0x00, ST7789_240x240_XSTART,          // XSTART = 0
-      (ST7789_TFTWIDTH+ST7789_240x240_XSTART) >> 8,
-      (ST7789_TFTWIDTH+ST7789_240x240_XSTART) & 0xFF,   // XEND = 240
-    ST7789_RASET  , 4,                      // 6: Row addr set, 4 args, no delay:
-      0x00, ST7789_240x240_YSTART,          // YSTART = 0
-      (ST7789_TFTHEIGHT+ST7789_240x240_YSTART) >> 8,
-      (ST7789_TFTHEIGHT+ST7789_240x240_YSTART) & 0xFF,  // YEND = 240
-    ST7789_INVON ,   DELAY,          // 7: Inversion ON
-      10,
-    ST7789_NORON  ,   DELAY,         // 8: Normal display on, no args, w/delay
-      10,                                   // 10 ms delay
-    ST7789_DISPON ,   DELAY,         // 9: Main screen turn on, no args, w/delay
-    255 };                                  // 255 = 500 ms delay
-
-
+    cmd_240x240[] = { // Initialization commands for 7789 screens
+        9, // 9 commands in list:
+        ST7789_SWRESET, DELAY, // 1: Software reset, no args, w/delay
+        150, // 150 ms delay
+        ST7789_SLPOUT, DELAY, // 2: Out of sleep mode, no args, w/delay
+        10, // 255 = 500 ms delay
+        ST7789_COLMOD, 1 + DELAY, // 3: Set color mode, 1 arg + delay:
+        0x55, // 16-bit color
+        10, // 10 ms delay
+        ST7789_MADCTL, 1, // 4: Memory access ctrl (directions), 1 arg:
+        0x08, // Row addr/col addr, bottom to top refresh
+        ST7789_CASET, 4, //  5: Column addr set, 4 args, no delay:
+        0x00,
+        0, //     XSTART = 0
+        0,
+        240, //     XEND = 240
+        ST7789_RASET, 4, //  6: Row addr set, 4 args, no delay:
+        0x00,
+        0, //     YSTART = 0
+        320 >> 8,
+        320 & 0xFF, //     YEND = 320
+        ST7789_INVON, DELAY, // 7: Inversion ON
+        10,
+        ST7789_NORON, DELAY, // 8: Normal display on, no args, w/delay
+        10, // 10 ms delay
+        ST7789_DISPON, DELAY, // 9: Main screen turn on, no args, w/delay
+        255
+    }; // 255 = 500 ms delay
 
 //static void ST7789_GPIO_Init(void);
 static void ST7789_WriteCommand(uint8_t cmd);
 static void ST7789_WriteData(uint8_t* buff, size_t buff_size);
 static void ST7789_ExecuteCommandList(const uint8_t* addr);
-static void ST7789_SetAddressWindow(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1);
+static void ST7789_SetAddressWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
 
 static void Send_Data8(uint8_t data);
 static void Send_Data16(uint16_t data);
@@ -156,10 +157,10 @@ static void Send_Data16(uint16_t data)
     while (!LL_SPI_IsActiveFlag_TXE(SPI1)) {
     }
     LL_SPI_TransmitData16(SPI1, data);
-    while (!LL_SPI_IsActiveFlag_RXNE(SPI1)) {
-    }
+    // while (!LL_SPI_IsActiveFlag_RXNE(SPI1)) {}
     // (void) SPI1->DR; //fake Rx read;
-    //while (LL_SPI_IsActiveFlag_BSY(SPI1));
+    while (LL_SPI_IsActiveFlag_BSY(SPI1))
+        ;
 }
 
 static void ST7789_Reset()
@@ -167,6 +168,7 @@ static void ST7789_Reset()
     TFT_RES_L();
     LL_mDelay(20);
     TFT_RES_H();
+    LL_mDelay(150);
 }
 
 static void ST7789_WriteCommand(uint8_t cmd)
@@ -213,34 +215,35 @@ static void ST7789_ExecuteCommandList(const uint8_t* addr)
     }
 }
 
-static void ST7789_SetAddressWindow(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1)
+static void ST7789_SetAddressWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 {
-    // column address set
+
+    uint16_t x_start = x0 + X_SHIFT, x_end = x1 + X_SHIFT;
+    uint16_t y_start = y0 + Y_SHIFT, y_end = y1 + Y_SHIFT;
+
+    /* Column Address set */
     ST7789_WriteCommand(ST7789_CASET);
-    uint8_t data[] = { 0x00, x0 + _xstart, 0x00, x1 + _xstart };
-    ST7789_WriteData(data, sizeof(data));
+    {
+        uint8_t data[] = { x_start >> 8, x_start & 0xFF, x_end >> 8, x_end & 0xFF };
+        ST7789_WriteData(data, sizeof(data));
+    }
 
-    // row address set
+    /* Row Address set */
     ST7789_WriteCommand(ST7789_RASET);
-    data[1] = y0 + _ystart;
-    data[3] = y1 + _ystart;
-    ST7789_WriteData(data, sizeof(data));
-
-    // write to RAM
+    {
+        uint8_t data[] = { y_start >> 8, y_start & 0xFF, y_end >> 8, y_end & 0xFF };
+        ST7789_WriteData(data, sizeof(data));
+    }
+    /* Write to RAM */
     ST7789_WriteCommand(ST7789_RAMWR);
 }
-
 void ST7789_Init()
 {
-    //ST7789_GPIO_Init();
+
     TFT_CS_L();
     ST7789_Reset();
     ST7789_ExecuteCommandList(cmd_240x240);
-    /*
-    ST7789_ExecuteCommandList(init_cmds1);
-    ST7789_ExecuteCommandList(init_cmds2);
-    ST7789_ExecuteCommandList(init_cmds3);
-    */
+
     TFT_CS_H();
 }
 
@@ -261,6 +264,7 @@ void ST7789_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
 void ST7789_FillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
 {
     // clipping
+
     if ((x >= _width) || (y >= _height))
         return;
     if ((x + w - 1) >= _width)
@@ -276,16 +280,6 @@ void ST7789_FillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16
     Send_DMA_Data16(&tbuf, w * h);
     LL_DMA_SetMemoryIncMode(DMA1, LL_DMA_CHANNEL_3, LL_DMA_MEMORY_INCREMENT);
     TFT_CS_H();
-
-    /*
-    TFT_DC_D();
-    uint16_t tbuf[w];
-    for (int x = w ; x >= 0; x--) 
-            tbuf[x] = color;
-    for (y = h; y > 0; y--) 
-        Send_DMA_Data16(tbuf,sizeof(tbuf)/2);
-    TFT_CS_H();
-    */
 }
 
 void ST7789_FillScreen(uint16_t color)
@@ -293,7 +287,7 @@ void ST7789_FillScreen(uint16_t color)
     ST7789_FillRectangle(0, 0, _width, _height, color);
 }
 
-void ST7789_DrawImage(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t* data)
+void ST7789_DrawImage(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t* data)
 {
     if ((x >= _width) || (y >= _height))
         return;
@@ -731,6 +725,7 @@ void ST7789_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t co
 ***************************************************************************************/
 void ST7789_DrawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color)
 {
+
     // Rudimentary clipping
     if ((x >= _width) || (y >= _height))
         return;
@@ -751,6 +746,7 @@ void ST7789_DrawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color)
 void ST7789_DrawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color)
 {
     // Rudimentary clipping
+
     if ((x >= _width) || (y >= _height))
         return;
     if ((x + w - 1) >= _width)
@@ -781,32 +777,32 @@ void ST7789_SetRotation(uint8_t m)
         ST7789_WriteData(&d_r, sizeof(d_r));
         _width = ST7789_TFTWIDTH;
         _height = ST7789_TFTHEIGHT;
-        _xstart = ST7789_240x240_XSTART;
-        _ystart = ST7789_240x240_YSTART;
+        X_SHIFT = 0;
+        Y_SHIFT = 80;
     } break;
     case 1: {
         uint8_t d_r = (ST7789_MADCTL_MY | ST7789_MADCTL_MV | ST7789_MADCTL_RGB);
         ST7789_WriteData(&d_r, sizeof(d_r));
         _width = ST7789_TFTHEIGHT;
         _height = ST7789_TFTWIDTH;
-        _xstart = ST7789_240x240_YSTART;
-        _ystart = ST7789_240x240_XSTART;
+        X_SHIFT = 80;
+        Y_SHIFT = 0;
     } break;
     case 2: {
         uint8_t d_r = (ST7789_MADCTL_RGB);
         ST7789_WriteData(&d_r, sizeof(d_r));
         _width = ST7789_TFTWIDTH;
         _height = ST7789_TFTHEIGHT;
-        _xstart = ST7789_240x240_XSTART;
-        _ystart = ST7789_240x240_YSTART;
+        X_SHIFT = 0;
+        Y_SHIFT = 0;
     } break;
     case 3: {
         uint8_t d_r = (ST7789_MADCTL_MX | ST7789_MADCTL_MV | ST7789_MADCTL_RGB);
         ST7789_WriteData(&d_r, sizeof(d_r));
         _width = ST7789_TFTHEIGHT;
         _height = ST7789_TFTWIDTH;
-        _xstart = ST7789_240x240_YSTART;
-        _ystart = ST7789_240x240_XSTART;
+        X_SHIFT = 0;
+        Y_SHIFT = 0;
     } break;
     }
     TFT_CS_H();
@@ -844,21 +840,23 @@ void ST7789_DrawChar(char ch, const uint8_t font[], uint16_t X, uint16_t Y, uint
     fWidth = font[1];
     fHeight = font[2];
     fBPL = font[3];
+    uint16_t buffer[fHeight * fWidth];
+    uint16_t index = 0;
 
     tempChar = (uint8_t*)&font[((ch - 0x20) * fOffset) + 4]; /* Current Character = Meta + (Character Index * Offset) */
-
-    /* Clear background first */
-    ST7789_FillRectangle(X, Y, fWidth, fHeight, bgcolor);
 
     for (int j = 0; j < fHeight; j++) {
         for (int i = 0; i < fWidth; i++) {
             uint8_t z = tempChar[fBPL * i + ((j & 0xF8) >> 3) + 1]; /* (j & 0xF8) >> 3, increase one by 8-bits */
             uint8_t b = 1 << (j & 0x07);
-            if ((z & b) != 0x00) {
-                ST7789_DrawPixel(X + i, Y + j, color);
-            }
+            if ((z & b) != 0x00)
+                buffer[index] = color;
+            else
+                buffer[index] = bgcolor;
+            index++;
         }
     }
+    ST7789_DrawImage(X, Y, fWidth, fHeight, buffer);
 }
 
 void ST7789_DrawText(const char* str, const uint8_t font[], uint16_t X, uint16_t Y, uint16_t color, uint16_t bgcolor)

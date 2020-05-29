@@ -11,11 +11,7 @@
 #define ST7789_SPI_PORT SPI1 //hspi1, hspi2, hspi3...
 #define USE_SPI_DMA //if used DMA for SPI bus
 
-#define ST7789_1_8_DEFAULT_ORIENTATION // AliExpress/eBay 1.8" display, default orientation
-//#define ST7789S_1_8_DEFAULT_ORIENTATION 	// WaveShare ST7789S-based 1.8" display, default orientation
-//#define ST7789_1_44_DEFAULT_ORIENTATION 	// 1.44" display, default orientation
-//#define ST7789_MINI_DEFAULT_ORIENTATION 	// mini 160x80 display (it's unlikely you want the default orientation)
-
+#define USING_240X240
 //Port and pin connected signal 'RES' (reset) ST7789 display
 #ifndef ST7789_RES_Pin
 #define ST7789_RES_Pin GPIO_PIN_12
